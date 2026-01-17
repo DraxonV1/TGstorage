@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TG Storage Cluster Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 1000px; margin-top: 50px; }
+        .card { border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .file-preview { max-width: 100px; max-height: 100px; object-fit: cover; border-radius: 5px; }
+        #drop-zone { border: 2px dashed #0d6efd; border-radius: 10px; padding: 30px; text-align: center; cursor: pointer; transition: 0.3s; }
+        #drop-zone:hover { background-color: #e9ecef; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>🚀 TG Storage Dashboard</h1>
+        <div class="input-group w-50">
+            <span class="input-group-text">API Key</span>
+            <input type="password" id="api-key" class="form-control" placeholder="Enter Admin API Key">
+            <button class="btn btn-outline-secondary" onclick="saveKey()">Save</button>
+        </div>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="card mb-4 p-4">
+        <h4>Upload New File</h4>
+        <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <p id="drop-text">Drag & Drop files here or click to browse</p>
+            <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(event)">
+        </div>
+        <div id="upload-status" class="mt-3"></div>
+    </div>
+
+    <!-- Stats Section -->
+    <div class="row mb-4" id="stats-row">
+        <div class="col-md-4">
+            <div class="card p-3 text-center">
+                <h6>Total Files</h6>
+                <h3 id="stat-count">0</h3>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 text-center">
+                <h6>Total Size</h6>
+                <h3 id="stat-size">0 MB</h3>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 text-center">
+                <h6>Total Views</h6>
+                <h3 id="stat-views">0</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Files Table -->
+    <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4>Files List</h4>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary" onclick="debugDB()">🐞 Debug DB</button>
+                <button class="btn btn-sm btn-primary" onclick="loadFiles()">🔄 Refresh</button>
+            </div>
+        </div>
+...
+    async function debugDB() {
+        const res = await apiFetch('/debug/db');
+        const data = await res.json();
+        alert(JSON.stringify(data, null, 2));
+    }
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Preview</th>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>Views</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="files-tbody">
+                    <!-- Loaded dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = window.location.origin;
+
+    function saveKey() {
+        const key = document.getElementById('api-key').value;
+        localStorage.setItem('tg_api_key', key);
+        loadStats();
+        loadFiles();
+    }
+
+    // Load key on start
+    window.onload = () => {
+        const savedKey = localStorage.getItem('tg_api_key');
+        if (savedKey) {
+            document.getElementById('api-key').value = savedKey;
+            loadStats();
+            loadFiles();
+        }
+    };
+
+    async function apiFetch(endpoint, options = {}) {
+        const key = localStorage.getItem('tg_api_key');
+        options.headers = {
+            ...options.headers,
+            'X-API-Key': key
+        };
+        const response = await fetch(`${API_BASE}${endpoint}`, options);
+        if (response.status === 403) alert("Invalid API Key!");
+        return response;
+    }
+
+    async function loadStats() {
+        try {
+            const res = await apiFetch('/stats');
+            const data = await res.json();
+            document.getElementById('stat-count').innerText = data.total_files;
+            document.getElementById('stat-size').innerText = (data.total_size_bytes / (1024 * 1024)).toFixed(2) + " MB";
+            document.getElementById('stat-views').innerText = data.total_views;
+        } catch (e) {}
+    }
+
+    async function loadFiles() {
+        try {
+            const res = await apiFetch('/files');
+            if (!res.ok) {
+                document.getElementById('files-tbody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading files: ${res.status}</td></tr>`;
+                return;
+            }
+            const files = await res.json();
+            const tbody = document.getElementById('files-tbody');
+            tbody.innerHTML = '';
+            
+            if (files.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">No files uploaded yet.</td></tr>';
+                return;
+            }
+            
+                files.forEach(file => {
+                    const isImage = file.mime_type.includes('image');
+                    const rawUrl = `${API_BASE}/f/${file.file_id}/${file.file_name}`;
+                    const dlUrl = `${API_BASE}/dl/${file.file_id}/${file.file_name}`;
+                    const shareUrl = `${API_BASE}/share/${file.share_token}`;
+
+                    const row = `
+                        <tr>
+                            <td>
+                                ${isImage ? `<img src="${rawUrl}" class="file-preview">` : `<div class="p-2 border rounded bg-light text-center">📄</div>`}
+                            </td>
+                            <td>
+                                <strong>${file.file_name}</strong><br>
+                                <small class="text-muted">${file.mime_type}</small>
+                            </td>
+                            <td>${(file.file_size / 1024).toFixed(1)} KB</td>
+                            <td>${file.view_count}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="${rawUrl}" target="_blank" class="btn btn-sm btn-outline-primary">View</a>
+                                    <a href="${dlUrl}" target="_blank" class="btn btn-sm btn-success">Download</a>
+                                    <button onclick="copyToClipboard('${shareUrl}')" class="btn btn-sm btn-warning">Copy Share</button>
+                                    <button onclick="copyToClipboard('${rawUrl}')" class="btn btn-sm btn-info text-white">Copy Raw</button>
+                                    <button onclick="deleteFile('${file.file_id}')" class="btn btn-sm btn-danger">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+        } catch (e) {}
+    }
+
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert("Raw link copied to clipboard!");
+        });
+    }
+
+    async function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const statusDiv = document.getElementById('upload-status');
+        statusDiv.innerHTML = `<div class="alert alert-info">Uploading ${file.name}...</div>`;
+
+        try {
+            const res = await apiFetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                statusDiv.innerHTML = `<div class="alert alert-success">Uploaded! <a href="${data.share_link}" target="_blank">Share Link</a></div>`;
+                loadFiles();
+                loadStats();
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.detail || 'Upload failed'}</div>`;
+            }
+        } catch (e) {
+            statusDiv.innerHTML = `<div class="alert alert-danger">Network Error</div>`;
+        }
+    }
+
+    async function deleteFile(fileId) {
+        if (!confirm("Are you sure?")) return;
+        const res = await apiFetch(`/file/${fileId}`, { method: 'DELETE' });
+        if (res.ok) {
+            loadFiles();
+            loadStats();
+        }
+    }
+
+    // Drag and drop logic
+    const dz = document.getElementById('drop-zone');
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('bg-light'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('bg-light'));
+    dz.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dz.classList.remove('bg-light');
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFileSelect({ target: { files: files } });
+    });
+</script>
+
+</body>
+</html>
