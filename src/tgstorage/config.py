@@ -23,11 +23,13 @@ class Settings(BaseSettings):
     
     UPLOAD_DELAY: float = 0.5
     
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Look for .env in current working directory
+    model_config = SettingsConfigDict(env_file=os.path.join(os.getcwd(), ".env"), extra="ignore")
 
     @property
     def bot_token_list(self) -> List[str]:
-        token_file = os.path.join(os.path.dirname(__file__), "tokens.txt")
+        # Look for tokens.txt in current working directory
+        token_file = os.path.join(os.getcwd(), "tokens.txt")
         if os.path.exists(token_file):
             with open(token_file, "r") as f:
                 return [t.strip() for t in f.readlines() if t.strip()]

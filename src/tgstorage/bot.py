@@ -12,13 +12,21 @@ class BotCluster:
     def __init__(self):
         self.bots = []
         self.current_idx = 0
-        
+        self._initialize_bots()
+
+    def _initialize_bots(self):
+        self.bots = []
         proxy_url = None
-        if settings.PROXY_HOST and settings.PROXY_PORT:
-            if settings.PROXY_USER and settings.PROXY_PASS:
-                proxy_url = f"http://{settings.PROXY_USER}:{settings.PROXY_PASS}@{settings.PROXY_HOST}:{settings.PROXY_PORT}"
+        proxy_host = getattr(settings, "PROXY_HOST", None)
+        proxy_port = getattr(settings, "PROXY_PORT", None)
+        proxy_user = getattr(settings, "PROXY_USER", None)
+        proxy_pass = getattr(settings, "PROXY_PASS", None)
+
+        if proxy_host and proxy_port:
+            if proxy_user and proxy_pass:
+                proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
             else:
-                proxy_url = f"http://{settings.PROXY_HOST}:{settings.PROXY_PORT}"
+                proxy_url = f"http://{proxy_host}:{proxy_port}"
         
         request = HTTPXRequest(proxy_url=proxy_url) if proxy_url else None
 
@@ -29,6 +37,8 @@ class BotCluster:
             self.bots.append(bot)
 
     async def start_all(self):
+        if not self.bots:
+            self._initialize_bots()
         for bot in self.bots:
             try:
                 me = await asyncio.wait_for(bot.get_me(), timeout=10)
@@ -41,6 +51,8 @@ class BotCluster:
 
     def get_bot(self):
         if not self.bots:
+            self._initialize_bots()
+        if not self.bots:
             return None
         bot = self.bots[self.current_idx % len(self.bots)]
         self.current_idx = (self.current_idx + 1) % len(self.bots)
@@ -48,6 +60,9 @@ class BotCluster:
 
     async def delete_messages(self, chat_id, message_ids):
         bot = self.get_bot()
+        if not bot:
+            logger.error("No bots available for deletion")
+            return
         if not isinstance(message_ids, list):
             message_ids = [message_ids]
         for msg_id in message_ids:
@@ -57,8 +72,12 @@ class BotCluster:
                 logger.error(f"Error deleting message {msg_id}: {e}")
 
     async def get_healthy_bot(self):
+        if not self.bots:
+            self._initialize_bots()
+            
         for _ in range(len(self.bots)):
             bot = self.get_bot()
+            if not bot: continue
             try:
                 await asyncio.wait_for(bot.get_me(), timeout=5)
                 return bot
