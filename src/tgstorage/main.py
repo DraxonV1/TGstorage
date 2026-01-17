@@ -32,6 +32,8 @@ async def cleanup_task():
 @api.on_event("startup")
 async def on_startup():
     await init_db()
+    # Initialize and verify all bots in the cluster
+    asyncio.create_task(cluster.start_all())
     asyncio.create_task(cleanup_task())
 
 def main():
